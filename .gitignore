@@ -1,0 +1,41 @@
+# Data (never commit)
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.pkl
+
+# Model weights
+models/weights/
+models/checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.safetensors
+
+# Submissions
+submissions/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Experiment tracking
+wandb/
+mlruns/
+
+# Misc
+*.log
+*.tmp
+tmp/

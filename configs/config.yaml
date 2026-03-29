@@ -1,0 +1,124 @@
+# =============================================================================
+# Config — Conser-vision: Wildlife Image Classification
+# Competition: https://www.drivendata.org/competitions/87/
+# Metric: Log-loss (multiclass, 8 classes)
+# =============================================================================
+
+general:
+  seed: 42
+  competition: "conser-vision"
+  task: "multiclass_classification"
+  metric: "log_loss"
+  num_classes: 8
+  class_names:
+    - "antelope_duiker"
+    - "bird"
+    - "blank"
+    - "civet_genet"
+    - "hog"
+    - "leopard"
+    - "monkey_prosimian"
+    - "rodent"
+  n_jobs: -1
+
+data:
+  train_features_path: "data/raw/train_features.csv"
+  train_labels_path: "data/raw/train_labels.csv"
+  test_features_path: "data/raw/test_features.csv"
+  train_images_dir: "data/raw/train_features"
+  test_images_dir: "data/raw/test_features"
+  id_col: "id"
+  image_col: "filepath"        # colonna nel CSV con path relativo immagine
+  image_size: 224
+  image_size_large: 384        # per fase avanzata
+
+cross_validation:
+  strategy: "StratifiedKFold"
+  n_splits: 5
+  shuffle: true
+
+# ---- Baseline Model (EfficientNet-B3) ----
+baseline:
+  model_name: "efficientnet_b3"   # timm model name
+  pretrained: true
+  dropout: 0.3
+  image_size: 224
+  batch_size: 32
+  num_epochs: 30
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+  label_smoothing: 0.1
+  early_stopping_patience: 7
+  mixed_precision: true
+  gradient_clip: 1.0
+  warmup_epochs: 2
+
+# ---- Advanced Model (ConvNeXt-Base) ----
+advanced:
+  model_name: "convnext_base"
+  pretrained: true
+  dropout: 0.3
+  image_size: 384
+  batch_size: 16
+  num_epochs: 40
+  learning_rate: 5.0e-5
+  weight_decay: 5.0e-5
+  label_smoothing: 0.1
+  early_stopping_patience: 7
+  mixed_precision: true
+  gradient_clip: 1.0
+  warmup_epochs: 3
+
+# ---- Augmentation ----
+augmentation:
+  train:
+    random_resized_crop: true
+    horizontal_flip: 0.5
+    vertical_flip: 0.3
+    rotation_degrees: 15
+    color_jitter:
+      brightness: 0.3
+      contrast: 0.3
+      saturation: 0.2
+      hue: 0.1
+    random_grayscale: 0.05      # camera traps spesso B&W
+    gaussian_blur: 0.2
+    normalize:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+  val:
+    resize: 256
+    center_crop: 224
+    normalize:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+# ---- TTA ----
+tta:
+  enabled: true
+  n_augments: 5
+
+# ---- Ensemble ----
+ensemble:
+  method: "average"   # average | weighted_average | rank_average
+  weights: null
+
+# ---- LR Scheduler ----
+scheduler:
+  name: "CosineAnnealingLR"   # CosineAnnealingLR | OneCycleLR | CosineAnnealingWarmRestarts
+  T_max: 30                   # epochs
+  eta_min: 1.0e-6
+
+# ---- Paths ----
+paths:
+  model_dir: "models/weights"
+  checkpoint_dir: "models/checkpoints"
+  submission_dir: "submissions"
+  oof_dir: "data/processed"
+
+# ---- Logging ----
+logging:
+  use_wandb: false
+  wandb_project: "drivendata-conser-vision"
+  run_name: null
+  log_every_n_steps: 50
