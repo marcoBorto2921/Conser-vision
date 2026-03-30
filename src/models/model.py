@@ -101,7 +101,7 @@ def build_model(
     )
 
     if checkpoint_path is not None:
-        state = torch.load(checkpoint_path, map_location="cpu")
+        state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
         # Handle state dicts saved with or without 'model_state_dict' key
         if "model_state_dict" in state:
             state = state["model_state_dict"]

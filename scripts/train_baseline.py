@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train baseline model (EfficientNet-B3)")
     parser.add_argument("--config", type=str, default="configs/config.yaml")
     parser.add_argument("--folds", type=int, default=None, help="Override n_splits (e.g. 1 for quick debug)")
+    parser.add_argument("--epochs", type=int, default=None, help="Override num_epochs (e.g. 2 for quick test)")
     parser.add_argument("--device", type=str, default=None, help="cuda | cpu | mps")
     return parser.parse_args()
 
@@ -45,6 +46,10 @@ def main() -> None:
     # Override folds if specified
     if args.folds is not None:
         cfg["cross_validation"]["n_splits"] = args.folds
+
+    # Override epochs if specified
+    if args.epochs is not None:
+        cfg["baseline"]["num_epochs"] = args.epochs
 
     # Device
     if args.device:

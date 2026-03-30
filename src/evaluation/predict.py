@@ -7,6 +7,7 @@ Supports averaging across folds and optional TTA.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -53,10 +54,16 @@ def predict_with_tta(
     tta_transforms = get_tta_transforms(image_size)
     tta_probs: list[np.ndarray] = []
 
+    _num_workers = 0 if (device.type != "cuda" or sys.platform == "win32") else 4
+    _pin_memory = device.type == "cuda"
+
     for i, transform in enumerate(tta_transforms):
         print(f"  TTA augmentation {i+1}/{len(tta_transforms)}")
         ds = WildlifeDataset(test_df, images_dir, transform=transform, is_test=True)
-        loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+        loader = DataLoader(
+            ds, batch_size=batch_size, shuffle=False,
+            num_workers=_num_workers, pin_memory=_pin_memory,
+        )
         probs = predict_single_checkpoint(model, loader, device)
         tta_probs.append(probs)
 
@@ -116,7 +123,11 @@ def generate_submission(
                 transform=get_val_transforms(model_cfg["image_size"]),
                 is_test=True,
             )
-            loader = DataLoader(ds, batch_size=model_cfg["batch_size"] * 2, shuffle=False, num_workers=4)
+            _num_workers = 0 if (device.type != "cuda" or sys.platform == "win32") else 4
+            loader = DataLoader(
+                ds, batch_size=model_cfg["batch_size"] * 2, shuffle=False,
+                num_workers=_num_workers, pin_memory=device.type == "cuda",
+            )
             probs = predict_single_checkpoint(model, loader, device)
 
         all_fold_probs.append(probs)

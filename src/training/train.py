@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.metrics import log_loss
 from torch.cuda.amp import GradScaler, autocast
 from torch.optim import AdamW
@@ -83,7 +83,7 @@ def validate(
         images = batch["image"].to(device, non_blocking=True)
         labels = batch["label"].to(device, non_blocking=True)
 
-        with autocast():
+        with autocast(enabled=device.type == "cuda"):
             logits = model(images)
             loss = criterion(logits, labels)
 
@@ -134,13 +134,15 @@ def train_fold(
         val_df, images_dir,
         transform=get_val_transforms(model_cfg["image_size"])
     )
+    # num_workers=0 on CPU/Windows (multiprocessing overhead is worse than single-process)
+    _num_workers = 0 if device.type != "cuda" else 4
     train_loader = DataLoader(
         train_ds, batch_size=model_cfg["batch_size"],
-        shuffle=True, num_workers=4, pin_memory=True
+        shuffle=True, num_workers=_num_workers, pin_memory=device.type == "cuda"
     )
     val_loader = DataLoader(
         val_ds, batch_size=model_cfg["batch_size"] * 2,
-        shuffle=False, num_workers=4, pin_memory=True
+        shuffle=False, num_workers=_num_workers, pin_memory=device.type == "cuda"
     )
 
     # Model
@@ -238,16 +240,27 @@ def run_cv(
     # Stratify on the class with highest probability (one-hot)
     target_series = train_df[CLASS_NAMES].idxmax(axis=1)
 
-    skf = StratifiedKFold(
-        n_splits=n_splits,
-        shuffle=cfg["cross_validation"]["shuffle"],
-        random_state=cfg["general"]["seed"],
-    )
-
     oof_preds = np.zeros((len(train_df), cfg["general"]["num_classes"]), dtype=np.float32)
     fold_scores: list[float] = []
+    all_val_idx: np.ndarray = np.array([], dtype=np.intp)
 
-    for fold, (train_idx, val_idx) in enumerate(skf.split(train_df, target_series)):
+    # n_splits=1 → single 80/20 stratified holdout (quick debug mode)
+    if n_splits == 1:
+        all_idx = np.arange(len(train_df))
+        train_idx, val_idx = train_test_split(
+            all_idx, test_size=0.2, stratify=target_series,
+            random_state=cfg["general"]["seed"],
+        )
+        splits = [(train_idx, val_idx)]
+    else:
+        skf = StratifiedKFold(
+            n_splits=n_splits,
+            shuffle=cfg["cross_validation"]["shuffle"],
+            random_state=cfg["general"]["seed"],
+        )
+        splits = list(skf.split(train_df, target_series))
+
+    for fold, (train_idx, val_idx) in enumerate(splits):
         fold_train_df = train_df.iloc[train_idx]
         fold_val_df = train_df.iloc[val_idx]
 
@@ -263,10 +276,11 @@ def run_cv(
 
         oof_preds[val_idx] = fold_oof
         fold_scores.append(fold_log_loss)
+        all_val_idx = np.concatenate([all_val_idx, val_idx])
 
     overall_ll = log_loss(
-        train_df[CLASS_NAMES].values.argmax(axis=1),
-        oof_preds,
+        train_df[CLASS_NAMES].values.argmax(axis=1)[all_val_idx],
+        oof_preds[all_val_idx],
         labels=list(range(cfg["general"]["num_classes"])),
     )
     print(f"\n{'='*60}")

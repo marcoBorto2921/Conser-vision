@@ -81,6 +81,11 @@ class WildlifeDataset(Dataset):
                 if alt.exists():
                     img_path = alt
                     break
+        if not img_path.exists():
+            raise FileNotFoundError(
+                f"Image not found for id='{image_id}'. "
+                f"Tried: {self.images_dir / (str(image_id) + '.jpg')} and common variants."
+            )
         img = Image.open(img_path).convert("RGB")
         return img
 
@@ -89,7 +94,7 @@ class WildlifeDataset(Dataset):
 
         if self.transform is not None:
             # Support both torchvision transforms and albumentations
-            if hasattr(self.transform, "transform"):
+            if type(self.transform).__module__.startswith("albumentations"):
                 # albumentations
                 transformed = self.transform(image=np.array(img))
                 img_tensor: torch.Tensor = transformed["image"]
@@ -125,7 +130,7 @@ def load_dataframes(
     train_labels = pd.read_csv(train_labels_path)
     test_df = pd.read_csv(test_features_path)
 
-    train_df = train_features.merge(train_labels, on="id", how="left")
+    train_df = train_features.merge(train_labels, on="id", how="inner")
 
     print(f"Train: {len(train_df):,} samples")
     print(f"Test:  {len(test_df):,} samples")

@@ -7,6 +7,7 @@ Designed for camera-trap images (fixed-position cameras, day/night variation).
 
 from __future__ import annotations
 
+import torch
 import torchvision.transforms.v2 as T
 from torchvision.transforms.v2 import InterpolationMode
 
@@ -38,7 +39,7 @@ def get_train_transforms(image_size: int = 224) -> T.Compose:
         T.RandomGrayscale(p=0.1),  # simulate IR/night camera images
         T.RandomApply([T.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0))], p=0.2),
         T.ToImage(),
-        T.ToDtype(T.torch.float32, scale=True),
+        T.ToDtype(torch.float32, scale=True),
         T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
     ])
 
@@ -50,7 +51,7 @@ def get_val_transforms(image_size: int = 224) -> T.Compose:
         T.Resize(resize_size, interpolation=InterpolationMode.BICUBIC),
         T.CenterCrop(image_size),
         T.ToImage(),
-        T.ToDtype(T.torch.float32, scale=True),
+        T.ToDtype(torch.float32, scale=True),
         T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
     ])
 
@@ -60,24 +61,39 @@ def get_tta_transforms(image_size: int = 224) -> list[T.Compose]:
 
     Each transform represents one 'view' of the test image.
     Final prediction = mean of softmax probabilities across all views.
+
+    Views:
+      1. Standard center crop
+      2. Standard center crop + horizontal flip
+      3. Zoomed-in center crop (resize to 1.15x before cropping)
+      4. Zoomed-in center crop + horizontal flip
+      5. Original val transform (identical to view 1, kept for back-compat)
     """
     resize_size = int(image_size * (256 / 224))
-    base = [
-        T.Resize(resize_size, interpolation=InterpolationMode.BICUBIC),
+    resize_size_large = int(resize_size * 1.15)  # zoom-in variant
+
+    tail = [
         T.ToImage(),
-        T.ToDtype(T.torch.float32, scale=True),
+        T.ToDtype(torch.float32, scale=True),
         T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
     ]
 
-    crops = [
-        T.CenterCrop(image_size),
-        T.RandomCrop(image_size),  # top-left area
+    # (resize_size, use_hflip) pairs — all deterministic
+    variants = [
+        (resize_size, False),
+        (resize_size, True),
+        (resize_size_large, False),
+        (resize_size_large, True),
     ]
 
     tta_list = []
-    for crop in crops:
-        tta_list.append(T.Compose([T.Resize(resize_size, interpolation=InterpolationMode.BICUBIC), crop] + base[1:]))
-        tta_list.append(T.Compose([T.Resize(resize_size, interpolation=InterpolationMode.BICUBIC), T.RandomHorizontalFlip(p=1.0), crop] + base[1:]))
+    for rs, hflip in variants:
+        ops = [T.Resize(rs, interpolation=InterpolationMode.BICUBIC)]
+        if hflip:
+            ops.append(T.RandomHorizontalFlip(p=1.0))
+        ops.append(T.CenterCrop(image_size))
+        ops.extend(tail)
+        tta_list.append(T.Compose(ops))
 
     # original val transform
     tta_list.append(get_val_transforms(image_size))

@@ -41,6 +41,10 @@ cd conser-vision
 # Crea il venv se non esiste ancora
 python -m venv .venv
 
+## Git Workflow
+After each significant change, commit with a descriptive message following the convention:
+`feat: ...`, `fix: ...`, `exp: ...`, `docs: ...`
+
 # Attiva il venv (Linux/macOS)
 source .venv/bin/activate
 # Attiva il venv (Windows)
