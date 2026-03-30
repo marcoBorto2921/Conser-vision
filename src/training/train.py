@@ -118,9 +118,9 @@ def train_fold(
     output_dir: Path,
 ) -> tuple[float, np.ndarray]:
     """Train a single fold and return (best_val_log_loss, oof_predictions)."""
-    print(f"\n{'='*60}")
-    print(f"  FOLD {fold+1}")
-    print(f"{'='*60}")
+    print(f"\n{'='*60}", flush=True)
+    print(f"  FOLD {fold+1}", flush=True)
+    print(f"{'='*60}", flush=True)
 
     set_global_seed(cfg["general"]["seed"] + fold)
     model_cfg = cfg["baseline"]
@@ -193,7 +193,8 @@ def train_fold(
             f"Val loss: {val_metrics['loss']:.4f} | "
             f"Val log-loss: {val_metrics['log_loss']:.4f} | "
             f"LR: {scheduler.get_last_lr()[0]:.2e} | "
-            f"{elapsed:.0f}s"
+            f"{elapsed:.0f}s",
+            flush=True,
         )
 
         if val_metrics["log_loss"] < best_log_loss:
@@ -210,14 +211,14 @@ def train_fold(
                 },
                 checkpoint_path,
             )
-            print(f"  ✓ Saved checkpoint → {checkpoint_path}")
+            print(f"  ✓ Saved checkpoint → {checkpoint_path}", flush=True)
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"  Early stopping triggered at epoch {epoch+1}")
+                print(f"  Early stopping triggered at epoch {epoch+1}", flush=True)
                 break
 
-    print(f"\n  Fold {fold+1} best log-loss: {best_log_loss:.4f}")
+    print(f"\n  Fold {fold+1} best log-loss: {best_log_loss:.4f}", flush=True)
     return best_log_loss, best_oof
 
 
@@ -283,13 +284,13 @@ def run_cv(
         oof_preds[all_val_idx],
         labels=list(range(cfg["general"]["num_classes"])),
     )
-    print(f"\n{'='*60}")
-    print(f"  CV Results:")
+    print(f"\n{'='*60}", flush=True)
+    print(f"  CV Results:", flush=True)
     for i, s in enumerate(fold_scores):
-        print(f"    Fold {i+1}: {s:.4f}")
-    print(f"  Mean fold log-loss: {np.mean(fold_scores):.4f} ± {np.std(fold_scores):.4f}")
-    print(f"  OOF log-loss:       {overall_ll:.4f}")
-    print(f"{'='*60}")
+        print(f"    Fold {i+1}: {s:.4f}", flush=True)
+    print(f"  Mean fold log-loss: {np.mean(fold_scores):.4f} ± {np.std(fold_scores):.4f}", flush=True)
+    print(f"  OOF log-loss:       {overall_ll:.4f}", flush=True)
+    print(f"{'='*60}", flush=True)
 
     # Save OOF predictions
     oof_df = train_df[["id"]].copy()
@@ -297,6 +298,6 @@ def run_cv(
         oof_df[cls] = oof_preds[:, i]
     oof_path = Path(cfg["paths"]["oof_dir"]) / "oof_predictions.csv"
     oof_df.to_csv(oof_path, index=False)
-    print(f"  OOF predictions saved → {oof_path}")
+    print(f"  OOF predictions saved → {oof_path}", flush=True)
 
     return oof_preds, fold_scores
