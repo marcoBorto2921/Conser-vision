@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.metrics import log_loss
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
@@ -49,7 +49,7 @@ def train_one_epoch(
 
         optimizer.zero_grad(set_to_none=True)
 
-        with autocast(enabled=scaler.is_enabled()):
+        with autocast("cuda", enabled=scaler.is_enabled()):
             logits = model(images)
             loss = criterion(logits, labels)
 
@@ -83,7 +83,7 @@ def validate(
         images = batch["image"].to(device, non_blocking=True)
         labels = batch["label"].to(device, non_blocking=True)
 
-        with autocast(enabled=device.type == "cuda"):
+        with autocast("cuda", enabled=device.type == "cuda"):
             logits = model(images)
             loss = criterion(logits, labels)
 
@@ -135,7 +135,7 @@ def train_fold(
         transform=get_val_transforms(model_cfg["image_size"])
     )
     # num_workers=0 on CPU/Windows (multiprocessing overhead is worse than single-process)
-    _num_workers = 0 if device.type != "cuda" else 4
+    _num_workers = 0 if device.type != "cuda" else 2
     train_loader = DataLoader(
         train_ds, batch_size=model_cfg["batch_size"],
         shuffle=True, num_workers=_num_workers, pin_memory=device.type == "cuda"
@@ -170,7 +170,7 @@ def train_fold(
 
     # Loss: soft cross-entropy with label smoothing
     criterion = nn.CrossEntropyLoss(label_smoothing=model_cfg["label_smoothing"])
-    scaler = GradScaler(enabled=model_cfg["mixed_precision"] and device.type == "cuda")
+    scaler = GradScaler("cuda", enabled=model_cfg["mixed_precision"] and device.type == "cuda")
 
     best_log_loss = float("inf")
     best_oof: Optional[np.ndarray] = None

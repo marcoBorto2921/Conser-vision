@@ -52,6 +52,7 @@ baseline:
   mixed_precision: true
   gradient_clip: 1.0
   warmup_epochs: 2
+  num_workers: 2
 
 # ---- Advanced Model (ConvNeXt-Base) ----
 advanced:
@@ -68,6 +69,7 @@ advanced:
   mixed_precision: true
   gradient_clip: 1.0
   warmup_epochs: 3
+  num_workers: 2
 
 # ---- Augmentation ----
 augmentation:
