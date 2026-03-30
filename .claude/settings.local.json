@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m venv .venv)",
+      "Bash(.venv/Scripts/python -m pip install --upgrade pip)",
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(.venv/Scripts/python --version 2>&1)",
+      "Bash(.venv/Scripts/python scripts/train_baseline.py --folds 1)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python scripts/train_baseline.py --folds 1)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python scripts/train_baseline.py --folds 1 --epochs 2)"
+    ]
+  }
+}
