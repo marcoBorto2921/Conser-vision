@@ -195,15 +195,21 @@ def train_fold(
             f"patience: {patience_counter}/{patience}",
             flush=True,
         )
+        # Recover best_oof from the best checkpoint so OOF predictions are
+        # always from the best model, not from the (potentially worse) last state.
+        best_ckpt_path = output_dir / f"fold{fold+1}_best.pth"
+        print("  Running initial validation to recover OOF predictions...", flush=True)
+        if best_ckpt_path.exists():
+            best_ckpt = torch.load(best_ckpt_path, map_location=device)
+            model.load_state_dict(best_ckpt["model_state_dict"])
+            best_oof = validate(model, val_loader, criterion, device)["probs"]
+            # Restore the last (training) model state for continued training
+            model.load_state_dict(ckpt["model_state_dict"])
+        else:
+            best_oof = validate(model, val_loader, criterion, device)["probs"]
         if start_epoch >= model_cfg["num_epochs"]:
             print("  All epochs already completed — skipping fold.", flush=True)
-            # Re-validate to recover OOF predictions
-            val_metrics = validate(model, val_loader, criterion, device)
-            return best_log_loss, val_metrics["probs"]
-        # Re-run validation to recover best_oof for early-stopping safety
-        print("  Running initial validation to recover OOF predictions...", flush=True)
-        val_metrics = validate(model, val_loader, criterion, device)
-        best_oof = val_metrics["probs"]
+            return best_log_loss, best_oof
 
     for epoch in range(start_epoch, model_cfg["num_epochs"]):
         t0 = time.time()
