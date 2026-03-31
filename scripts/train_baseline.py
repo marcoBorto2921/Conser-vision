@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--folds", type=int, default=None, help="Override n_splits (e.g. 1 for quick debug)")
     parser.add_argument("--epochs", type=int, default=None, help="Override num_epochs (e.g. 2 for quick test)")
     parser.add_argument("--device", type=str, default=None, help="cuda | cpu | mps")
+    parser.add_argument("--resume", action="store_true", help="Resume training from the latest fold checkpoint in models/weights/")
     return parser.parse_args()
 
 
@@ -82,6 +83,7 @@ def main() -> None:
         cfg=cfg,
         device=device,
         output_dir=Path(cfg["paths"]["model_dir"]),
+        resume=args.resume,
     )
 
     print("\n✓ Training complete.")

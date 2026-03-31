@@ -116,6 +116,7 @@ def train_fold(
     cfg: dict,
     device: torch.device,
     output_dir: Path,
+    resume_checkpoint: Optional[Path] = None,
 ) -> tuple[float, np.ndarray]:
     """Train a single fold and return (best_val_log_loss, oof_predictions)."""
     print(f"\n{'='*60}", flush=True)
@@ -176,8 +177,35 @@ def train_fold(
     best_oof: Optional[np.ndarray] = None
     patience_counter = 0
     patience = model_cfg["early_stopping_patience"]
+    start_epoch = 0
 
-    for epoch in range(model_cfg["num_epochs"]):
+    if resume_checkpoint is not None and resume_checkpoint.exists():
+        print(f"  Resuming from {resume_checkpoint}", flush=True)
+        ckpt = torch.load(resume_checkpoint, map_location=device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        scaler.load_state_dict(ckpt["scaler_state_dict"])
+        start_epoch = ckpt["epoch"] + 1
+        best_log_loss = ckpt["best_score"]
+        patience_counter = ckpt.get("patience_counter", 0)
+        print(
+            f"  Resumed: starting at epoch {start_epoch + 1}, "
+            f"best log-loss so far: {best_log_loss:.4f}, "
+            f"patience: {patience_counter}/{patience}",
+            flush=True,
+        )
+        if start_epoch >= model_cfg["num_epochs"]:
+            print("  All epochs already completed — skipping fold.", flush=True)
+            # Re-validate to recover OOF predictions
+            val_metrics = validate(model, val_loader, criterion, device)
+            return best_log_loss, val_metrics["probs"]
+        # Re-run validation to recover best_oof for early-stopping safety
+        print("  Running initial validation to recover OOF predictions...", flush=True)
+        val_metrics = validate(model, val_loader, criterion, device)
+        best_oof = val_metrics["probs"]
+
+    for epoch in range(start_epoch, model_cfg["num_epochs"]):
         t0 = time.time()
         train_metrics = train_one_epoch(
             model, train_loader, optimizer, criterion, scaler, device,
@@ -206,17 +234,51 @@ def train_fold(
                 {
                     "epoch": epoch,
                     "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler_state_dict": scheduler.state_dict(),
+                    "scaler_state_dict": scaler.state_dict(),
+                    "best_score": best_log_loss,
                     "val_log_loss": best_log_loss,
+                    "patience_counter": patience_counter,
                     "fold": fold,
                 },
                 checkpoint_path,
             )
-            print(f"  ✓ Saved checkpoint → {checkpoint_path}", flush=True)
+            print(f"  ✓ Saved best checkpoint → {checkpoint_path}", flush=True)
         else:
             patience_counter += 1
             if patience_counter >= patience:
                 print(f"  Early stopping triggered at epoch {epoch+1}", flush=True)
+                # Save last checkpoint before exiting so resume works
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "scheduler_state_dict": scheduler.state_dict(),
+                        "scaler_state_dict": scaler.state_dict(),
+                        "best_score": best_log_loss,
+                        "patience_counter": patience_counter,
+                        "fold": fold,
+                    },
+                    output_dir / f"fold{fold+1}_last.pth",
+                )
                 break
+
+        # Save last checkpoint every epoch for resume support
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "scaler_state_dict": scaler.state_dict(),
+                "best_score": best_log_loss,
+                "patience_counter": patience_counter,
+                "fold": fold,
+            },
+            output_dir / f"fold{fold+1}_last.pth",
+        )
 
     print(f"\n  Fold {fold+1} best log-loss: {best_log_loss:.4f}", flush=True)
     return best_log_loss, best_oof
@@ -228,6 +290,7 @@ def run_cv(
     cfg: dict,
     device: torch.device,
     output_dir: Path,
+    resume: bool = False,
 ) -> tuple[np.ndarray, list[float]]:
     """Run full StratifiedKFold cross-validation.
 
@@ -265,6 +328,14 @@ def run_cv(
         fold_train_df = train_df.iloc[train_idx]
         fold_val_df = train_df.iloc[val_idx]
 
+        resume_checkpoint: Optional[Path] = None
+        if resume:
+            last_ckpt = output_dir / f"fold{fold+1}_last.pth"
+            if last_ckpt.exists():
+                resume_checkpoint = last_ckpt
+            else:
+                print(f"  No resume checkpoint found for fold {fold+1}, starting from scratch.", flush=True)
+
         fold_log_loss, fold_oof = train_fold(
             fold=fold,
             train_df=fold_train_df,
@@ -273,6 +344,7 @@ def run_cv(
             cfg=cfg,
             device=device,
             output_dir=output_dir,
+            resume_checkpoint=resume_checkpoint,
         )
 
         oof_preds[val_idx] = fold_oof
