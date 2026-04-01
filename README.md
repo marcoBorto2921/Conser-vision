@@ -26,8 +26,8 @@ Classify wildlife species appearing in camera-trap images from conservation rese
 
 | Split | Notes |
 |-------|-------|
-| Train | Images + one-hot labels across 8 classes |
-| Test  | Images only, predict class probabilities |
+| Train | 16,488 images + one-hot labels across 8 classes |
+| Test  | 4,464 images only, predict class probabilities |
 
 **Key challenges**:
 - Class imbalance (blank images likely dominant)
@@ -48,20 +48,22 @@ Classify wildlife species appearing in camera-trap images from conservation rese
 
 | Stage | Log-loss | Notes |
 |-------|----------|-------|
-| Baseline (local CV) | — | EfficientNet-B3 defaults |
-| Best local CV | — | — |
-| Public LB | — | — |
+| Fold 1 local CV | 0.8454 | EfficientNet-B3, epoch 29 |
+| Public LB | 1.8334 | Single fold, no hyperparameter tuning — rank 333/2,060 |
 | Private LB | — | — |
 
 ---
 
 ## Setup & Run
-
 ```bash
-# 1. Install dependencies
+# 1. Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 2. Download data from DrivenData (after joining competition)
+# 3. Download data from DrivenData (after joining competition)
 # Unzip into data/raw/:
 #   train_features.csv
 #   train_labels.csv
@@ -69,16 +71,16 @@ pip install -r requirements.txt
 #   train_features/   ← folder with training images
 #   test_features/    ← folder with test images
 
-# 3. Train baseline (5-fold CV)
+# 4. Train baseline (5-fold CV)
 python scripts/train_baseline.py
 
-# 4. Quick debug (1 fold)
+# 5. Quick debug (1 fold)
 python scripts/train_baseline.py --folds 1
 
-# 5. Generate submission (with TTA)
+# 6. Generate submission (with TTA)
 python scripts/predict.py
 
-# 6. Generate submission (without TTA, faster)
+# 7. Generate submission (without TTA, faster)
 python scripts/predict.py --no-tta
 ```
 
@@ -86,4 +88,6 @@ python scripts/predict.py --no-tta
 
 ## Key Learnings
 
-_To be filled in during/after competition._
+- Copying data from Google Drive to Colab RAM before training gives ~10x speed improvement
+- `subprocess.Popen` with `PYTHONUNBUFFERED=1` is required for real-time output streaming in Colab
+- Gap between local CV (0.8454) and public LB (1.8334) suggests the model is overconfident on test — TTA and multi-fold ensemble expected to close this gap significantly
