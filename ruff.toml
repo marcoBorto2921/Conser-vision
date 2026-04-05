@@ -1,0 +1,2 @@
+# Notebooks have intentional cell-order imports and undefined cross-cell names
+exclude = ["notebooks/"]

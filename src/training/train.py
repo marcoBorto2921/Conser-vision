@@ -7,6 +7,7 @@ Supports mixed-precision, early stopping, and checkpointing.
 
 from __future__ import annotations
 
+import random
 import time
 from pathlib import Path
 from typing import Optional
@@ -29,6 +30,33 @@ from src.models.model import build_model
 from utils.seed import set_global_seed
 
 
+def mixup_data(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    alpha: float = 0.4,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+    """Apply MixUp augmentation to a batch.
+
+    Samples a mixing coefficient lam ~ Beta(alpha, alpha) and returns
+    a linearly interpolated image and the two original label tensors.
+
+    Args:
+        x: Image batch tensor, shape (B, C, H, W).
+        y: Label tensor (one-hot or class indices), shape (B, ...).
+        alpha: Beta distribution concentration parameter.
+
+    Returns:
+        Tuple of (mixed_x, y_a, y_b, lam) where lam is the scalar mixing coefficient.
+    """
+    lam = float(np.random.beta(alpha, alpha))
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size, device=x.device)
+    mixed_x = lam * x + (1 - lam) * x[index]
+    y_a = y
+    y_b = y[index]
+    return mixed_x, y_a, y_b, lam
+
+
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -37,6 +65,8 @@ def train_one_epoch(
     scaler: GradScaler,
     device: torch.device,
     gradient_clip: float = 1.0,
+    mixup_alpha: float = 0.4,
+    mixup_prob: float = 0.0,
 ) -> dict[str, float]:
     """Single training epoch."""
     model.train()
@@ -50,8 +80,13 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
 
         with autocast("cuda", enabled=scaler.is_enabled()):
-            logits = model(images)
-            loss = criterion(logits, labels)
+            if random.random() < mixup_prob:
+                images, labels_a, labels_b, lam = mixup_data(images, labels, alpha=mixup_alpha)
+                logits = model(images)
+                loss = lam * criterion(logits, labels_a) + (1 - lam) * criterion(logits, labels_b)
+            else:
+                logits = model(images)
+                loss = criterion(logits, labels)
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -77,6 +112,7 @@ def validate(
     total_loss = 0.0
     n_samples = 0
     all_probs: list[np.ndarray] = []
+    all_logits: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
 
     for batch in tqdm(loader, desc="  Val", leave=False):
@@ -87,7 +123,9 @@ def validate(
             logits = model(images)
             loss = criterion(logits, labels)
 
+        raw_logits = logits.cpu().numpy().astype(np.float32)
         probs = torch.softmax(logits, dim=1).cpu().numpy()
+        all_logits.append(raw_logits)
         all_probs.append(probs)
         all_labels.append(labels.cpu().numpy())
 
@@ -95,16 +133,20 @@ def validate(
         n_samples += images.size(0)
 
     all_probs_np = np.concatenate(all_probs)
+    all_logits_np = np.concatenate(all_logits)
     all_labels_np = np.concatenate(all_labels)
     # Convert one-hot to class indices for log_loss
     true_classes = all_labels_np.argmax(axis=1)
     ll = log_loss(true_classes, all_probs_np, labels=list(range(NUM_CLASSES)))
+    label_indices = all_labels_np.argmax(axis=1)  # shape (n,) integer class indices
 
     return {
         "loss": total_loss / n_samples,
         "log_loss": ll,
         "probs": all_probs_np,
-        "labels": all_labels_np,
+        "logits": all_logits_np,
+        "labels": all_labels_np,       # one-hot, shape (n, 8) — kept for backward compat
+        "label_indices": label_indices, # integer class indices, shape (n,)
     }
 
 
@@ -215,7 +257,9 @@ def train_fold(
         t0 = time.time()
         train_metrics = train_one_epoch(
             model, train_loader, optimizer, criterion, scaler, device,
-            gradient_clip=model_cfg["gradient_clip"]
+            gradient_clip=model_cfg["gradient_clip"],
+            mixup_alpha=model_cfg.get("mixup_alpha", 0.4),
+            mixup_prob=model_cfg.get("mixup_prob", 0.0),
         )
         val_metrics = validate(model, val_loader, criterion, device)
         scheduler.step()
@@ -247,6 +291,8 @@ def train_fold(
                     "val_log_loss": best_log_loss,
                     "patience_counter": patience_counter,
                     "fold": fold,
+                    "val_logits": val_metrics["logits"],
+                    "val_labels": val_metrics["label_indices"],
                 },
                 checkpoint_path,
             )
@@ -363,7 +409,7 @@ def run_cv(
         labels=list(range(cfg["general"]["num_classes"])),
     )
     print(f"\n{'='*60}", flush=True)
-    print(f"  CV Results:", flush=True)
+    print("  CV Results:", flush=True)
     for i, s in enumerate(fold_scores):
         print(f"    Fold {i+1}: {s:.4f}", flush=True)
     print(f"  Mean fold log-loss: {np.mean(fold_scores):.4f} ± {np.std(fold_scores):.4f}", flush=True)

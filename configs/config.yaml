@@ -34,25 +34,27 @@ data:
 
 cross_validation:
   strategy: "StratifiedKFold"
-  n_splits: 5
+  n_splits: 1
   shuffle: true
 
 # ---- Baseline Model (EfficientNet-B3) ----
 baseline:
-  model_name: "efficientnet_b3"   # timm model name
+  model_name: "tf_efficientnetv2_m"   # timm model name
   pretrained: true
   dropout: 0.3
   image_size: 224
   batch_size: 32
-  num_epochs: 30
+  num_epochs: 60
   learning_rate: 1.0e-4
   weight_decay: 1.0e-4
   label_smoothing: 0.1
-  early_stopping_patience: 7
+  early_stopping_patience: 10
   mixed_precision: true
   gradient_clip: 1.0
   warmup_epochs: 2
   num_workers: 2
+  mixup_alpha: 0.4
+  mixup_prob: 0.5
 
 # ---- Advanced Model (ConvNeXt-Base) ----
 advanced:
