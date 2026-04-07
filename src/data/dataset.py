@@ -7,7 +7,6 @@ Handles train/val (with labels) and test (without labels) splits.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Callable, Optional
 
