@@ -39,3 +39,7 @@ mlruns/
 *.log
 *.tmp
 tmp/
+
+#
+CLAUDE.md  
+Makefile 
