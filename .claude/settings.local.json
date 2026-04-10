@@ -38,7 +38,25 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(wc:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(/c/Users/marco/Desktop/github_projects/Conser-vision/.venv/Scripts/python.exe --version)",
+      "Bash(find /c/Users/marco/Desktop/github_projects/Conser-vision -type f \\\\\\(-name *.pth -o -name *.pt -o -name *.ckpt \\\\\\))",
+      "Bash(find /c/Users/marco/Desktop/github_projects/Conser-vision -type f -name submission*.csv)",
+      "Bash(.venv/Scripts/python.exe notebooks/diagnostics/01_data_inventory.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe notebooks/diagnostics/01_data_inventory.py)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe notebooks/diagnostics/02_cv_split_audit.py)",
+      "Bash(/c/Users/marco/Desktop/github_projects/Conser-vision/reports/check3_reeval_val.txt:*)",
+      "Bash(/c/Users/marco/Desktop/github_projects/Conser-vision/reports/check5_submission_audit.txt:*)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe notebooks/diagnostics/06_preprocessing_parity.py)",
+      "Bash(echo exit=$?)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe notebooks/diagnostics/07_temperature_audit.py)",
+      "Bash(.venv/Scripts/python.exe -c \"import sys, sklearn; print\\(sys.executable\\); print\\('sklearn', sklearn.__version__\\); from sklearn.model_selection import StratifiedGroupKFold; print\\('StratifiedGroupKFold OK'\\)\")",
+      "Bash(git checkout:*)",
+      "Bash(.venv/Scripts/python.exe -c \"import ast; ast.parse\\(open\\('src/training/train.py'\\).read\\(\\)\\); print\\('train.py parses OK'\\)\")",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe scripts/smoke_test_cv_fix.py 2>&1)",
+      "Bash(.venv/Scripts/python.exe -c \"import ast; ast.parse\\(open\\('src/training/train.py'\\).read\\(\\)\\); ast.parse\\(open\\('src/evaluation/predict.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"\nimport sys; sys.path.insert\\(0, '.'\\)\nfrom src.training.train import run_cv\nfrom src.evaluation.predict import generate_submission\nprint\\('imports OK'\\)\n\")"
     ]
   }
 }
