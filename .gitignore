@@ -41,5 +41,10 @@ mlruns/
 tmp/
 
 #
-CLAUDE.md  
-Makefile 
+CLAUDE.md
+Makefile
+
+# Diagnostic audit artifacts (personal, not competition code)
+reports/
+notebooks/diagnostics/
+

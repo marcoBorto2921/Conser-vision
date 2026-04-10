@@ -1,7 +1,7 @@
 """
 src/training/train.py
 ----------------------
-Training loop with StratifiedKFold cross-validation.
+Training loop with site-aware (StratifiedGroupKFold) cross-validation.
 Supports mixed-precision, early stopping, and checkpointing.
 """
 
@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.metrics import log_loss
 from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
@@ -293,6 +293,7 @@ def train_fold(
                     "fold": fold,
                     "val_logits": val_metrics["logits"],
                     "val_labels": val_metrics["label_indices"],
+                    "val_sites": int(val_df["site"].nunique()) if "site" in val_df.columns else -1,
                 },
                 checkpoint_path,
             )
@@ -344,7 +345,7 @@ def run_cv(
     output_dir: Path,
     resume: bool = False,
 ) -> tuple[np.ndarray, list[float]]:
-    """Run full StratifiedKFold cross-validation.
+    """Run full StratifiedGroupKFold (site-aware) cross-validation.
 
     Returns:
         oof_preds: OOF predictions array of shape (n_train, num_classes).
@@ -353,30 +354,72 @@ def run_cv(
     output_dir.mkdir(parents=True, exist_ok=True)
     n_splits = cfg["cross_validation"]["n_splits"]
 
-    # Stratify on the class with highest probability (one-hot)
-    target_series = train_df[CLASS_NAMES].idxmax(axis=1)
+    # --- Site-aware CV split ---
+    # The public test set uses camera-trap sites that are COMPLETELY DISJOINT
+    # from the train set (0 overlap, verified in reports/diagnostic_audit.md).
+    # Therefore the local val fold MUST also be site-disjoint from the train
+    # fold, otherwise the local metric measures in-site memorisation instead of
+    # out-of-site generalisation (which is what the leaderboard measures).
+    #
+    # We use StratifiedGroupKFold(n_splits=5) unconditionally:
+    #   - n_splits == 1  → take only the first fold (~20% site-disjoint holdout)
+    #   - n_splits == 5  → iterate all 5 folds
+    if "site" not in train_df.columns:
+        raise KeyError(
+            "train_df must contain a 'site' column for site-aware CV. "
+            "Check that load_dataframes preserved it."
+        )
+
+    # Stratify on the class with highest probability (one-hot) and group on site
+    y = train_df[CLASS_NAMES].values.argmax(axis=1)
+    groups = train_df["site"].values
 
     oof_preds = np.zeros((len(train_df), cfg["general"]["num_classes"]), dtype=np.float32)
     fold_scores: list[float] = []
     all_val_idx: np.ndarray = np.array([], dtype=np.intp)
 
-    # n_splits=1 → single 80/20 stratified holdout (quick debug mode)
+    sgkf = StratifiedGroupKFold(
+        n_splits=5,
+        shuffle=cfg["cross_validation"]["shuffle"],
+        random_state=cfg["general"]["seed"],
+    )
+    all_splits = list(sgkf.split(np.arange(len(train_df)), y, groups))
+
     if n_splits == 1:
-        all_idx = np.arange(len(train_df))
-        train_idx, val_idx = train_test_split(
-            all_idx, test_size=0.2, stratify=target_series,
-            random_state=cfg["general"]["seed"],
-        )
-        splits = [(train_idx, val_idx)]
+        # Fast-iteration mode: single site-disjoint hold-out (first fold only)
+        splits = [all_splits[0]]
+    elif n_splits == 5:
+        splits = all_splits
     else:
-        skf = StratifiedKFold(
-            n_splits=n_splits,
-            shuffle=cfg["cross_validation"]["shuffle"],
-            random_state=cfg["general"]["seed"],
+        raise ValueError(
+            f"cross_validation.n_splits must be 1 or 5, got {n_splits}. "
+            "Site-aware CV is built from a fixed 5-way StratifiedGroupKFold."
         )
-        splits = list(skf.split(train_df, target_series))
 
     for fold, (train_idx, val_idx) in enumerate(splits):
+        # --- Guardrail: assert no site leakage between train and val folds ---
+        train_groups = set(groups[train_idx])
+        val_groups = set(groups[val_idx])
+        leaked = train_groups & val_groups
+        assert len(leaked) == 0, (
+            f"GROUP LEAKAGE in fold {fold}: "
+            f"{len(leaked)} sites shared between train and val folds"
+        )
+        # Per-fold logging (sites + class distribution sanity check)
+        val_class_counts = np.bincount(y[val_idx], minlength=cfg["general"]["num_classes"])
+        val_class_pct = val_class_counts / max(len(val_idx), 1) * 100
+        print(
+            f"[fold {fold}] "
+            f"train rows={len(train_idx):>6}  val rows={len(val_idx):>6} | "
+            f"train sites={len(train_groups):>4}  val sites={len(val_groups):>4}  leaked=0",
+            flush=True,
+        )
+        print(
+            "           val class dist: "
+            + ", ".join(f"{c}={p:.1f}%" for c, p in zip(CLASS_NAMES, val_class_pct)),
+            flush=True,
+        )
+
         fold_train_df = train_df.iloc[train_idx]
         fold_val_df = train_df.iloc[val_idx]
 

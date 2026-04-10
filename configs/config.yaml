@@ -33,7 +33,11 @@ data:
   image_size_large: 384        # per fase avanzata
 
 cross_validation:
-  strategy: "StratifiedKFold"
+  # Site-aware CV: StratifiedGroupKFold(n_splits=5) on the `site` column.
+  # n_splits=1 → use the first fold only (~20% site-disjoint hold-out, fast mode)
+  # n_splits=5 → iterate all 5 folds (final ensemble mode)
+  strategy: "StratifiedGroupKFold"
+  group_col: "site"
   n_splits: 1
   shuffle: true
 
