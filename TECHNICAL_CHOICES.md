@@ -4,18 +4,41 @@
 
 ---
 
+## Changelog
+
+### 2026-04-10 — Fixed site leakage in CV split
+**Impact**: expected to close most of the 0.62 gap between local val (~0.85) and public LB (1.4722).
+
+**Bug**: the previous `train_test_split(stratify=class)` split ignored the `site` column. 100% of val images came from sites also present in the train fold (median 168 train images per val-image site), while the public test set uses 51 sites completely disjoint from train. Local log-loss measured in-site memorisation, not out-of-site generalisation — exactly the opposite of the LB. Full audit: `reports/diagnostic_audit.md`.
+
+**Fix**: replaced with `StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=seed)` using `groups = train_df["site"].values`. When `n_splits=1` in config, the code now takes the first fold of the 5-way split, giving a ~20% site-disjoint hold-out. A runtime `assert len(train_groups & val_groups) == 0` stays in the code as permanent guardrail. Temperature scaling is now automatically fit on site-disjoint logits, because `val_logits`/`val_labels` are saved from the same site-disjoint val fold.
+
+**Expected local metric change**: local val log-loss will rise from ~0.85 to ~1.3–1.5 on first retrain. **This is not a regression** — it is the honest number, and the new local ↔ LB gap should be < 0.10.
+
+**Consequence**: every prior tuning decision (LR, dropout, MixUp probability, early stopping patience, augmentation intensity) was made against a broken metric and must be re-validated before being trusted.
+
+---
+
 ## 1. Cross-Validation Strategy
 
-**Choice**: Single stratified hold-out (80/20), `n_splits=1`
+**Choice**: `StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=seed)` with `groups = train_df["site"].values`.
+
+- `n_splits=1` in `configs/config.yaml` → use only the **first fold** of the 5-way split (≈20% site-disjoint hold-out, fast iteration mode)
+- `n_splits=5` → iterate all 5 folds (final ensemble mode)
 
 **Rationale**:
-Nella fase attuale privilegiamo l'iteration speed: un singolo fold permette di testare rapidamente ipotesi (cambio modello, augmentations, calibrazione) senza moltiplicare il costo computazionale. La stratificazione per argmax del vettore one-hot garantisce comunque che val set e train set abbiano la stessa distribuzione di classi. 5-fold StratifiedKFold è riservato alla fase finale per ottenere una stima più robusta e fare ensemble.
+Il public test set usa 51 camera-trap sites che sono **completamente disgiunti** dai 148 sites del train set (verificato in `reports/diagnostic_audit.md` / `reports/check1_data_inventory.txt`). La LB misura quindi generalizzazione out-of-site. Qualsiasi splitter che non raggruppi per `site` produce val folds in cui la rete può sfruttare lo sfondo fisso della camera (stessa vegetazione, stessi animali che passano ripetutamente) — esattamente la scorciatoia che non esiste sul test reale. `StratifiedGroupKFold` è l'unico splitter di sklearn che combina group-disjoint e stratificazione di classe, entrambi necessari qui (il dataset ha `hog` al 5.9%, sotto-rappresentata).
 
 **Stratification key**: la classe con probabilità più alta nel vettore one-hot (argmax dei label).
 
+**Grouping key**: `site` (colonna presente in `train_features.csv`, esempio S0120, S0069, ...).
+
+**Runtime guardrail**: `assert len(set(groups[train_idx]) & set(groups[val_idx])) == 0` viene eseguito ad ogni fold in `src/training/train.py::run_cv`. La linea di log per fold riporta: train rows, val rows, train sites, val sites, per-class distribution sul val fold.
+
 **Alternatives considered**:
-- `StratifiedKFold k=5`: stima più accurata ma 5× il costo; riservo per la fase ensemble finale
-- `KFold`: scartato perché non tiene conto dello sbilanciamento → CV score meno correlato con LB
+- `StratifiedKFold k=5` senza group: **rejected 2026-04-10** — stratifica correttamente le classi ma ignora `site`, quindi condivide sites tra train e val (100% overlap misurato). Causa diretta del gap tra local CV e LB.
+- `KFold` (anche con group): scartato perché non tiene conto dello sbilanciamento di classe.
+- `train_test_split(stratify=class)`: la scelta originale. **Rejected 2026-04-10**: ignorava `site`, produceva un val set in-site, stima di log-loss ottimistica di ≈0.4–0.6. Vedi changelog.
 
 ---
 

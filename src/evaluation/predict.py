@@ -161,6 +161,17 @@ def generate_submission(
             val_logits: np.ndarray = ckpt_dict["val_logits"]
             val_labels: np.ndarray = ckpt_dict["val_labels"]
             temperature = calibrate_temperature(val_logits, val_labels)
+            # Report whether the fold's val set is site-disjoint. After the
+            # CV fix (2026-04-10), these logits/labels come from the
+            # StratifiedGroupKFold val fold, so calibration is site-disjoint
+            # by construction. val_sites may be absent in legacy checkpoints.
+            n_val = int(val_labels.shape[0])
+            n_sites = int(ckpt_dict.get("val_sites", -1))
+            sites_str = f"{n_sites} unique sites" if n_sites >= 0 else "N unique sites unknown (legacy checkpoint)"
+            print(
+                f"[calibration] T = {temperature:.4f} fit on val fold with "
+                f"{n_val} samples, {sites_str}"
+            )
         else:
             print(
                 f"  WARNING: checkpoint {ckpt_path.name} has no val_logits/val_labels. "
